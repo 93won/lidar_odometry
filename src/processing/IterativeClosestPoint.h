@@ -21,16 +21,24 @@
 #include <ceres/ceres.h>
 #include "../optimization/AdaptiveMEstimator.h"
 
+// Forward declarations
+namespace lidar_odometry {
+    namespace database {
+        class LidarFrame;
+    }
+}
+
 namespace lidar_odometry {
 namespace processing {
 
-// Type aliases for ICP - use simple names
+// Type aliases for ICP - use simple names (PCL compatible)
 using ICPPointType = pcl::PointXYZ;
 using ICPPointCloud = pcl::PointCloud<ICPPointType>;
-using ICPPointCloudPtr = std::shared_ptr<ICPPointCloud>;
-using ICPPointCloudConstPtr = std::shared_ptr<const ICPPointCloud>;
+using ICPPointCloudPtr = ICPPointCloud::Ptr;  // boost::shared_ptr
+using ICPPointCloudConstPtr = ICPPointCloud::ConstPtr;  // boost::shared_ptr
 using ICPPose = Sophus::SE3f;
 using ICPVector3f = Eigen::Vector3f;
+
 
 /**
  * @brief Configuration for ICP algorithm
@@ -162,6 +170,23 @@ public:
      */
     const ICPConfig& get_config() const { return m_config; }
     
+    /**
+     * @brief Align two LiDAR frames using Frame-to-Frame ICP
+     * @param frame1 First LiDAR frame (reference, will be fixed)
+     * @param frame2 Second LiDAR frame (source, will be optimized)
+     * @param initial_T_w_l1 Initial transform from lidar1 to world
+     * @param initial_T_w_l2 Initial transform from lidar2 to world
+     * @param result_T_w_l1 Output transform from lidar1 to world (same as input, fixed)
+     * @param result_T_w_l2 Output optimized transform from lidar2 to world
+     * @return True if ICP converged successfully
+     */
+    bool align_frames(std::shared_ptr<const database::LidarFrame> frame1,
+                     std::shared_ptr<const database::LidarFrame> frame2,
+                     const ICPPose& initial_T_w_l1,
+                     const ICPPose& initial_T_w_l2,
+                     ICPPose& result_T_w_l1,
+                     ICPPose& result_T_w_l2);
+    
 private:
     /**
      * @brief Find point correspondences between source and target clouds
@@ -222,6 +247,47 @@ private:
      * @return True if points are collinear
      */
     bool isCollinear(const ICPVector3f& p1, const ICPVector3f& p2, const ICPVector3f& p3, float threshold);
+    
+    /**
+     * @brief Find point correspondences between two frames (Frame-to-Frame ICP)
+     * @param frame1_cloud First frame point cloud (target/reference)
+     * @param frame2_cloud Second frame point cloud (source)
+     * @param T_w_l1 Transform from lidar1 to world
+     * @param T_w_l2 Transform from lidar2 to world
+     * @param correspondences Output correspondences
+     * @return Number of valid correspondences found
+     */
+    size_t find_correspondences_frames(ICPPointCloudConstPtr frame1_cloud,
+                                      ICPPointCloudConstPtr frame2_cloud,
+                                      const ICPPose& T_w_l1,
+                                      const ICPPose& T_w_l2,
+                                      ICPCorrespondenceVector& correspondences);
+    
+    /**
+     * @brief Optimize poses using Ceres solver (Frame-to-Frame ICP)
+     * @param correspondences Point correspondences
+     * @param T_w_l1 Transform from lidar1 to world (FIXED)
+     * @param T_w_l2 Initial transform from lidar2 to world (OPTIMIZED)
+     * @param optimized_T_w_l2 Output optimized transform from lidar2 to world
+     * @param normalization_scale Scale for residual normalization
+     * @return True if optimization succeeded
+     */
+    bool optimize_poses_frames(const ICPCorrespondenceVector& correspondences,
+                              const ICPPose& T_w_l1,
+                              const ICPPose& T_w_l2,
+                              ICPPose& optimized_T_w_l2,
+                              double normalization_scale = 1.0);
+    
+    /**
+     * @brief Calculate alignment cost for Frame-to-Frame ICP
+     * @param correspondences Point correspondences
+     * @param T_w_l1 Transform from lidar1 to world
+     * @param T_w_l2 Transform from lidar2 to world
+     * @return Total alignment cost
+     */
+    double calculate_cost_frames(const ICPCorrespondenceVector& correspondences,
+                                const ICPPose& T_w_l1,
+                                const ICPPose& T_w_l2);
     
     // Configuration
     ICPConfig m_config;

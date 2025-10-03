@@ -71,7 +71,7 @@ include_directories(
 # Add definitions
 add_definitions(${PCL_DEFINITIONS})
 
-# Source files
+# Source files for main lidar_odometry
 set(LIDAR_ODOMETRY_SOURCES
     # Database module
     src/database/LidarFrame.cpp
@@ -98,18 +98,46 @@ set(LIDAR_ODOMETRY_SOURCES
     app/player/kitti_player.cpp
 )
 
-# Create executable
+# Source files for test program (excluding main app)
+set(TEST_F2F_ICP_SOURCES
+    # Database module
+    src/database/LidarFrame.cpp
+    
+    # Processing module
+    src/processing/FeatureExtractor.cpp
+    src/processing/Estimator.cpp
+    src/processing/IterativeClosestPoint.cpp
+    
+    # Optimization module
+    src/optimization/Parameters.cpp
+    src/optimization/Factors.cpp
+    src/optimization/AdaptiveMEstimator.cpp
+    
+    # Utility module
+    src/util/Config.cpp
+    src/util/MathUtils.cpp
+    
+    # Test application
+    app/test_frame_to_frame_icp.cpp
+)
+
+# Create main executable
 add_executable(lidar_odometry ${LIDAR_ODOMETRY_SOURCES})
 
-# Link Eigen3 to target
+# Create test executable for Frame-to-Frame ICP
+add_executable(test_frame_to_frame_icp ${TEST_F2F_ICP_SOURCES})
+
+# Link Eigen3 to targets
 if(TARGET Eigen3::Eigen)
     target_link_libraries(lidar_odometry Eigen3::Eigen)
+    target_link_libraries(test_frame_to_frame_icp Eigen3::Eigen)
 else()
     # Fallback for older CMake versions
     target_include_directories(lidar_odometry PRIVATE ${EIGEN3_INCLUDE_DIR})
+    target_include_directories(test_frame_to_frame_icp PRIVATE ${EIGEN3_INCLUDE_DIR})
 endif()
 
-# Link libraries
+# Link libraries to main executable
 target_link_libraries(lidar_odometry
     ${PCL_LIBRARIES}
     OpenGL::GL
@@ -125,8 +153,17 @@ target_link_libraries(lidar_odometry
     stdc++fs  # For std::filesystem
 )
 
-# Install target
-install(TARGETS lidar_odometry
+# Link libraries to test executable (no Pangolin needed)
+target_link_libraries(test_frame_to_frame_icp
+    ${PCL_LIBRARIES}
+    Threads::Threads
+    ceres
+    m  # Math library for M_PI
+    stdc++fs  # For std::filesystem
+)
+
+# Install targets
+install(TARGETS lidar_odometry test_frame_to_frame_icp
     RUNTIME DESTINATION bin
 )
 
