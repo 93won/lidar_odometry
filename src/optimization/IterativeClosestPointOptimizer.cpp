@@ -272,7 +272,17 @@ bool IterativeClosestPointOptimizer::optimize(std::shared_ptr<database::LidarFra
     auto start_time = std::chrono::high_resolution_clock::now();
     
     // Reset stats
-    m_last_stats = OptimizationStats();
+    /*
+        struct OptimizationStats {
+            size_t num_correspondences = 0;
+            size_t num_iterations = 0;
+            double initial_cost = 0.0;
+            double final_cost = 0.0;
+            double optimization_time_ms = 0.0;
+            bool converged = false;
+        };                                
+    */
+    m_last_stats = OptimizationStats();//记录信息
     
     // Initialize current transform estimate
     Sophus::SE3f current_transform = initial_transform;
@@ -490,7 +500,7 @@ bool IterativeClosestPointOptimizer::optimize(std::shared_ptr<database::LidarFra
     
     return true;
 }
-
+//查找匹配对
 size_t IterativeClosestPointOptimizer::find_correspondences_loop(std::shared_ptr<database::LidarFrame> last_keyframe,
                                                         std::shared_ptr<database::LidarFrame> curr_keyframe,
                                                         DualFrameCorrespondences &correspondences)
@@ -516,7 +526,7 @@ size_t IterativeClosestPointOptimizer::find_correspondences_loop(std::shared_ptr
 
 
 
-    const int K = 5;  // Number of neighbors for plane fitting
+    const int K = 5;  // Number of neighbors for plane fitting  寻找5个点
 
     // Find correspondences: query CURR points, find neighbors in LAST cloud
 
@@ -525,7 +535,7 @@ size_t IterativeClosestPointOptimizer::find_correspondences_loop(std::shared_ptr
     Eigen::Matrix4f T_wl_curr = curr_keyframe->get_pose().matrix(); // Current keyframe pose in world coordinates
     Eigen::Matrix4f T_lw_curr = T_wl_curr.inverse(); // Inverse transform
 
-    for (size_t idx = 0; idx < local_feature_curr->size(); ++idx)
+    for (size_t idx = 0; idx < local_feature_curr->size(); ++idx)//遍历当前帧的每个点
     {
         const auto& curr_point_local = local_feature_curr->at(idx);
 
@@ -548,7 +558,7 @@ size_t IterativeClosestPointOptimizer::find_correspondences_loop(std::shared_ptr
         std::vector<Eigen::Vector3d> selected_points_world;
         std::vector<Eigen::Vector3d> selected_points_local;
         bool non_collinear_found = false;
-
+        //寻找对应的上一帧世界系下的点 和 feature 点
         for (int k = 0; k < found_neighbors && selected_points_world.size() < 5; ++k) {
             int neighbor_idx = neighbor_indices[k];
 
@@ -566,7 +576,7 @@ size_t IterativeClosestPointOptimizer::find_correspondences_loop(std::shared_ptr
 
         // Check for non-collinear points
         if (selected_points_world.size() >= 3) {
-            if (is_collinear(selected_points_world[0], selected_points_world[1], selected_points_world[2], 0.5)) {
+            if (is_collinear(selected_points_world[0], selected_points_world[1], selected_points_world[2], 0.5)) {//太近 认为 不可用
                 continue;
             }
             non_collinear_found = true;
@@ -587,7 +597,7 @@ size_t IterativeClosestPointOptimizer::find_correspondences_loop(std::shared_ptr
         }
         centroid /= selected_points_world.size();
         
-        // Build matrix for SVD
+        // Build matrix for SVD  对世界系下的点进行分解
         Eigen::MatrixXd A(selected_points_world.size(), 3);
         for (size_t i = 0; i < selected_points_world.size(); ++i) {
             A.row(i) = (selected_points_world[i] - centroid).transpose();
@@ -595,7 +605,7 @@ size_t IterativeClosestPointOptimizer::find_correspondences_loop(std::shared_ptr
         
         // Compute SVD
         Eigen::JacobiSVD<Eigen::MatrixXd> svd(A, Eigen::ComputeFullV);
-        Eigen::Vector3d plane_normal = svd.matrixV().col(2);  // Last column is normal
+        Eigen::Vector3d plane_normal = svd.matrixV().col(2);  // Last column is normal 奇异值是按照降序进行排列的
         double plane_d = -plane_normal.dot(centroid);
         // Compute point-to-plane distance (residual)
         Eigen::Vector3d curr_point_world_d(curr_point_world.x(), curr_point_world.y(), curr_point_world.z());
@@ -603,7 +613,7 @@ size_t IterativeClosestPointOptimizer::find_correspondences_loop(std::shared_ptr
         distance = std::abs(distance);  
         // No distance thresholding for loop closure
         // Store correspondence
-        correspondences.points_last.push_back(selected_points_local[0]); // Use one of the local points
+        correspondences.points_last.push_back(selected_points_local[0]); // Use one of the local points 局部坐标系下的点 不是local_map
         correspondences.points_curr.push_back(Eigen::Vector3d(curr_point_local.x, curr_point_local.y, curr_point_local.z));
         correspondences.normals_last.push_back(plane_normal);
         correspondences.residuals.push_back(distance);  
