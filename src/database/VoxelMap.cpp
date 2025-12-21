@@ -258,6 +258,16 @@ void VoxelMap::UpdateVoxelMap(const PointCloudConstPtr& new_cloud,
         node_L1.surfel_centroid = centroid;
         node_L1.planarity_score = planarity;
         node_L1.last_child_count = current_child_count;
+        
+        // Gaussian Primitive: Store covariance and eigen decomposition
+        node_L1.has_gaussian = true;
+        node_L1.gaussian_mean = centroid;
+        node_L1.gaussian_covariance = covariance;
+        
+        // Eigen decomposition for visualization (sorted eigenvalues)
+        Eigen::SelfAdjointEigenSolver<Eigen::Matrix3f> eigen_solver(covariance);
+        node_L1.eigenvalues = eigen_solver.eigenvalues();      // λ1 ≤ λ2 ≤ λ3 (sorted ascending)
+        node_L1.eigenvectors = eigen_solver.eigenvectors();    // V = [v1, v2, v3]
     }
 }
 
@@ -353,6 +363,7 @@ void VoxelMap::RecomputeAllSurfels() {
         float planarity = singular_values(2) / (singular_values(0) + 1e-6f);
         if (planarity > m_planarity_threshold) {
             node_L1.has_surfel = false;
+            node_L1.has_gaussian = false;
             continue;
         }
         
@@ -362,6 +373,16 @@ void VoxelMap::RecomputeAllSurfels() {
         node_L1.surfel_centroid = centroid;
         node_L1.planarity_score = planarity;
         node_L1.last_child_count = current_child_count;
+        
+        // Gaussian Primitive: Store covariance and eigen decomposition
+        node_L1.has_gaussian = true;
+        node_L1.gaussian_mean = centroid;
+        node_L1.gaussian_covariance = cov;
+        
+        // Eigen decomposition for visualization (sorted eigenvalues)
+        Eigen::SelfAdjointEigenSolver<Eigen::Matrix3f> eigen_solver(cov);
+        node_L1.eigenvalues = eigen_solver.eigenvalues();      // λ1 ≤ λ2 ≤ λ3 (sorted ascending)
+        node_L1.eigenvectors = eigen_solver.eigenvectors();    // V = [v1, v2, v3]
     }
 }
 
@@ -415,6 +436,26 @@ std::vector<std::tuple<Eigen::Vector3f, Eigen::Vector3f, float>> VoxelMap::GetL1
     }
     
     return surfels;
+}
+
+std::vector<std::tuple<Eigen::Vector3f, Eigen::Matrix3f, Eigen::Vector3f, Eigen::Matrix3f>> VoxelMap::GetL1Gaussians() const {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    
+    std::vector<std::tuple<Eigen::Vector3f, Eigen::Matrix3f, Eigen::Vector3f, Eigen::Matrix3f>> gaussians;
+    gaussians.reserve(m_voxels_L1.size());
+    
+    for (const auto& [key, node] : m_voxels_L1) {
+        if (node.has_gaussian) {
+            gaussians.emplace_back(
+                node.gaussian_mean,        // μ
+                node.gaussian_covariance,  // Σ
+                node.eigenvalues,          // λ1, λ2, λ3
+                node.eigenvectors          // V = [v1, v2, v3]
+            );
+        }
+    }
+    
+    return gaussians;
 }
 
 void VoxelMap::RebuildKdTree() {

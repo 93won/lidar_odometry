@@ -281,6 +281,23 @@ public:
      */
     std::vector<std::tuple<Eigen::Vector3f, Eigen::Vector3f, float>> GetL1Surfels() const;
     
+    /**
+     * @brief Get all L1 Gaussian primitives for visualization
+     * @return Vector of (mean, covariance, eigenvalues, eigenvectors) tuples
+     */
+    std::vector<std::tuple<Eigen::Vector3f, Eigen::Matrix3f, Eigen::Vector3f, Eigen::Matrix3f>> GetL1Gaussians() const;
+    
+    /**
+     * @brief Get number of L1 voxels with valid Gaussian primitives
+     */
+    size_t GetGaussianCount() const {
+        size_t count = 0;
+        for (const auto& [key, node] : m_voxels_L1) {
+            if (node.has_gaussian) count++;
+        }
+        return count;
+    }
+    
 private:
     VoxelKey PointToVoxelKey(const Eigen::Vector3f& point, int level = 0) const;
     VoxelKey GetParentKey(const VoxelKey& key) const;
@@ -308,16 +325,23 @@ private:
     };
     ankerl::unordered_dense::map<VoxelKey, VoxelNode_L0, VoxelKeyHash> m_voxels_L0;
     
-    // Level 1: Parent voxels with precomputed surfels
+    // Level 1: Parent voxels with precomputed surfels and Gaussian primitives
     struct VoxelNode_L1 {
         ankerl::unordered_dense::set<VoxelKey, VoxelKeyHash> occupied_children;
         
-        // Surfel data
+        // Surfel data (legacy)
         bool has_surfel = false;
         Eigen::Vector3f surfel_normal = Eigen::Vector3f::Zero();
         Eigen::Vector3f surfel_centroid = Eigen::Vector3f::Zero();
         float planarity_score = 1.0f;
         int last_child_count = 0;
+        
+        // Gaussian Primitive data (new!)
+        bool has_gaussian = false;
+        Eigen::Vector3f gaussian_mean = Eigen::Vector3f::Zero();       // μ
+        Eigen::Matrix3f gaussian_covariance = Eigen::Matrix3f::Zero(); // Σ
+        Eigen::Vector3f eigenvalues = Eigen::Vector3f::Zero();         // λ1 ≤ λ2 ≤ λ3
+        Eigen::Matrix3f eigenvectors = Eigen::Matrix3f::Identity();    // V = [v1, v2, v3]
         
         VoxelNode_L1() = default;
     };

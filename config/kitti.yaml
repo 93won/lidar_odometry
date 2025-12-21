@@ -1,7 +1,7 @@
 # Data paths
-data_directory: "/home/eugene/data/KITTI"
+data_directory: "/home/eugene/data/KITTI/Velodyne"
 ground_truth_directory: "/home/eugene/data/KITTI/GroundTruth"
-output_directory: "/home/eugene/data/KITTI/Result"
+output_directory: "/home/eugene/data/KITTI/Velodyne/Result"
 seq: "07"
 
 # Player settings

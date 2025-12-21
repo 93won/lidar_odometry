@@ -220,6 +220,7 @@ private:
     pangolin::Var<bool> m_show_keyframes;              ///< Show keyframes checkbox
     pangolin::Var<bool> m_show_keyframe_map;           ///< Show last keyframe map checkbox
     pangolin::Var<bool> m_show_surfels;                ///< Show surfel discs checkbox
+    pangolin::Var<bool> m_show_gaussians;              ///< Show Gaussian primitive ellipsoids checkbox
     pangolin::Var<bool> m_show_coordinate_frame;       ///< Show coordinate frame checkbox
     pangolin::Var<bool> m_top_view_follow;             ///< Top-down view follow mode checkbox
     pangolin::Var<bool> m_step_forward_button;         ///< Step forward button
@@ -332,6 +333,11 @@ private:
      * @brief Draw L1 surfels as transparent discs
      */
     void draw_surfels();
+    
+    /**
+     * @brief Draw L1 Gaussian primitives as transparent ellipsoids
+     */
+    void draw_gaussians();
     
     /**
      * @brief Draw current pose

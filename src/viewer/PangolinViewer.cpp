@@ -33,7 +33,8 @@ PangolinViewer::PangolinViewer()
     , m_show_trajectory("ui.5. Show Trajectory", true, true)
     , m_show_keyframes("ui.6. Show Keyframes", true, true)
     , m_show_keyframe_map("ui.7. Show Keyframe Map (Gray)", true, true)
-    , m_show_surfels("ui.8. Show Surfels (Disc)", true, true)
+    , m_show_surfels("ui.8. Show Surfels (Disc)", false, true)
+    , m_show_gaussians("ui.8b. Show Gaussians (Ellipsoid)", true, true)
     , m_show_coordinate_frame("ui.9. Show Coordinate Frame", true, true)
     , m_top_view_follow("ui.10. Top View Follow", false, true)
     , m_step_forward_button("ui.11. Step Forward", false, false)
@@ -310,6 +311,11 @@ void PangolinViewer::render_loop() {
         // Draw surfels as transparent discs
         if (m_show_surfels.Get()) {
             draw_surfels();
+        }
+        
+        // Draw Gaussian primitives as transparent ellipsoids
+        if (m_show_gaussians.Get()) {
+            draw_gaussians();
         }
 
         // Draw current pose - using local copy
@@ -1019,6 +1025,147 @@ void PangolinViewer::draw_surfels() {
             Eigen::Vector3f circle_point = centroid + disc_radius * (cos_a * u_axis + sin_a * v_axis);
             glVertex3f(circle_point.x(), circle_point.y(), circle_point.z());
         }
+        glEnd();
+    }
+    
+    glDisable(GL_BLEND);
+    glLineWidth(1.0f);
+}
+
+void PangolinViewer::draw_gaussians() {
+    if (!m_voxel_map) return;
+    
+    // Get all L1 Gaussian primitives
+    auto gaussians = m_voxel_map->GetL1Gaussians();
+    if (gaussians.empty()) return;
+    
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    
+    // Ellipsoid resolution
+    const int lat_segments = 12;   // Latitude divisions
+    const int lon_segments = 16;   // Longitude divisions
+    const float scale_factor = 2.0f;  // 2-sigma ellipsoid
+    
+    for (const auto& gaussian_data : gaussians) {
+        const Eigen::Vector3f& mean = std::get<0>(gaussian_data);
+        // const Eigen::Matrix3f& covariance = std::get<1>(gaussian_data);  // Not directly used
+        const Eigen::Vector3f& eigenvalues = std::get<2>(gaussian_data);
+        const Eigen::Matrix3f& eigenvectors = std::get<3>(gaussian_data);
+        
+        // Ellipsoid radii = sqrt(eigenvalues) * scale_factor
+        Eigen::Vector3f radii = eigenvalues.cwiseSqrt() * scale_factor;
+        
+        // Clamp radii to reasonable range for visualization
+        float max_radius = 1.0f;  // Max visualization radius
+        float min_radius = 0.02f;  // Min visualization radius
+        radii = radii.cwiseMax(min_radius).cwiseMin(max_radius);
+        
+        // Color based on geometry type (eigenvalue ratios)
+        float e1 = eigenvalues[0] / (eigenvalues[2] + 1e-6f);  // λ1/λ3
+        float e2 = eigenvalues[1] / (eigenvalues[2] + 1e-6f);  // λ2/λ3
+        
+        float r, g, b;
+        if (e1 < 0.1f && e2 > 0.5f) {
+            // Plane: λ1 << λ2 ≈ λ3 → Green
+            r = 0.2f; g = 0.9f; b = 0.3f;
+        } else if (e1 < 0.2f && e2 < 0.3f) {
+            // Edge/Line: λ1 ≈ λ2 << λ3 → Blue
+            r = 0.3f; g = 0.5f; b = 0.9f;
+        } else if (e1 > 0.5f && e2 > 0.5f) {
+            // Sphere/Corner: λ1 ≈ λ2 ≈ λ3 → Red
+            r = 0.9f; g = 0.3f; b = 0.3f;
+        } else {
+            // Curved surface: intermediate → Yellow/Orange
+            r = 0.9f; g = 0.7f; b = 0.2f;
+        }
+        
+        // Draw ellipsoid as wireframe with transparency
+        glLineWidth(1.0f);
+        glColor4f(r, g, b, 0.6f);
+        
+        // Draw latitude circles
+        for (int i = 1; i < lat_segments; ++i) {
+            float lat = M_PI * i / lat_segments - M_PI / 2.0f;
+            float cos_lat = std::cos(lat);
+            float sin_lat = std::sin(lat);
+            
+            glBegin(GL_LINE_LOOP);
+            for (int j = 0; j < lon_segments; ++j) {
+                float lon = 2.0f * M_PI * j / lon_segments;
+                float cos_lon = std::cos(lon);
+                float sin_lon = std::sin(lon);
+                
+                // Unit sphere point
+                Eigen::Vector3f unit_point(
+                    cos_lat * cos_lon,
+                    cos_lat * sin_lon,
+                    sin_lat
+                );
+                
+                // Scale by radii
+                Eigen::Vector3f scaled = radii.cwiseProduct(unit_point);
+                
+                // Rotate by eigenvectors and translate by mean
+                Eigen::Vector3f world_point = mean + eigenvectors * scaled;
+                
+                glVertex3f(world_point.x(), world_point.y(), world_point.z());
+            }
+            glEnd();
+        }
+        
+        // Draw longitude lines
+        for (int j = 0; j < lon_segments; ++j) {
+            float lon = 2.0f * M_PI * j / lon_segments;
+            float cos_lon = std::cos(lon);
+            float sin_lon = std::sin(lon);
+            
+            glBegin(GL_LINE_STRIP);
+            for (int i = 0; i <= lat_segments; ++i) {
+                float lat = M_PI * i / lat_segments - M_PI / 2.0f;
+                float cos_lat = std::cos(lat);
+                float sin_lat = std::sin(lat);
+                
+                Eigen::Vector3f unit_point(
+                    cos_lat * cos_lon,
+                    cos_lat * sin_lon,
+                    sin_lat
+                );
+                
+                Eigen::Vector3f scaled = radii.cwiseProduct(unit_point);
+                Eigen::Vector3f world_point = mean + eigenvectors * scaled;
+                
+                glVertex3f(world_point.x(), world_point.y(), world_point.z());
+            }
+            glEnd();
+        }
+        
+        // Draw principal axes as arrows (optional - shows orientation)
+        glLineWidth(2.0f);
+        float arrow_scale = 0.5f;
+        
+        // v1 (smallest eigenvalue) - Red (typically normal direction)
+        glColor4f(1.0f, 0.0f, 0.0f, 0.8f);
+        glBegin(GL_LINES);
+        Eigen::Vector3f axis1 = mean + arrow_scale * radii[0] * eigenvectors.col(0);
+        glVertex3f(mean.x(), mean.y(), mean.z());
+        glVertex3f(axis1.x(), axis1.y(), axis1.z());
+        glEnd();
+        
+        // v2 (middle eigenvalue) - Green
+        glColor4f(0.0f, 1.0f, 0.0f, 0.8f);
+        glBegin(GL_LINES);
+        Eigen::Vector3f axis2 = mean + arrow_scale * radii[1] * eigenvectors.col(1);
+        glVertex3f(mean.x(), mean.y(), mean.z());
+        glVertex3f(axis2.x(), axis2.y(), axis2.z());
+        glEnd();
+        
+        // v3 (largest eigenvalue) - Blue
+        glColor4f(0.0f, 0.0f, 1.0f, 0.8f);
+        glBegin(GL_LINES);
+        Eigen::Vector3f axis3 = mean + arrow_scale * radii[2] * eigenvectors.col(2);
+        glVertex3f(mean.x(), mean.y(), mean.z());
+        glVertex3f(axis3.x(), axis3.y(), axis3.z());
         glEnd();
     }
     
