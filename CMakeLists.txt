@@ -27,6 +27,7 @@ find_package(OpenGL REQUIRED)
 find_package(GLEW REQUIRED)
 find_package(Threads REQUIRED)
 find_package(OpenCV REQUIRED)
+find_package(OpenMP REQUIRED)
 
 # Build third-party dependencies from source
 set(THIRDPARTY_DIR ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty)
@@ -91,18 +92,27 @@ set(LIDAR_ODOMETRY_SOURCES
     app/player/ply_player.cpp
 )
 
+# ICP Benchmark executables
+set(ICP_BENCHMARK_KITTI_SOURCES
+    benchmark/ICPBenchmark.cpp
+    benchmark/icp_benchmark.cpp
+)
+
 # Create executables
 add_executable(kitti_lidar_odometry ${KITTI_SOURCES})
 add_executable(lidar_odometry ${LIDAR_ODOMETRY_SOURCES})
+add_executable(icp_benchmark ${ICP_BENCHMARK_KITTI_SOURCES})
 
 # Link Eigen3 to targets
 if(TARGET Eigen3::Eigen)
     target_link_libraries(kitti_lidar_odometry Eigen3::Eigen)
     target_link_libraries(lidar_odometry Eigen3::Eigen)
+    target_link_libraries(icp_benchmark Eigen3::Eigen)
 else()
     # Fallback for older CMake versions
     target_include_directories(kitti_lidar_odometry PRIVATE ${EIGEN3_INCLUDE_DIR})
     target_include_directories(lidar_odometry PRIVATE ${EIGEN3_INCLUDE_DIR})
+    target_include_directories(icp_benchmark PRIVATE ${EIGEN3_INCLUDE_DIR})
 endif()
 
 # Link libraries for KITTI executable
@@ -135,8 +145,16 @@ target_link_libraries(lidar_odometry
     stdc++fs  # For std::filesystem
 )
 
+# Link libraries for icp_benchmark executable (minimal dependencies)
+target_link_libraries(icp_benchmark
+    Threads::Threads
+    OpenMP::OpenMP_CXX
+    m  # Math library for M_PI
+    stdc++fs  # For std::filesystem
+)
+
 # Install targets
-install(TARGETS kitti_lidar_odometry lidar_odometry
+install(TARGETS kitti_lidar_odometry lidar_odometry icp_benchmark
     RUNTIME DESTINATION bin
 )
 
